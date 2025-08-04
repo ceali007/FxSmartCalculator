@@ -1,10 +1,12 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-
+//import '../models/parsed_trade_data.dart';
+import '../models/parsed_trade_data.dart';
 import '../utils/ocr_parser.dart';
+import '../services/symbol_service.dart';
+import '../utils/parser_helper.dart';
 
 class OcrScreen extends StatefulWidget {
   @override
@@ -13,97 +15,135 @@ class OcrScreen extends StatefulWidget {
 
 class _OcrScreenState extends State<OcrScreen> {
   File? _image;
-  ParsedTradeData? _tradeData;
+  ParsedTradeData? _parsedData;
   final TextEditingController _lotController = TextEditingController();
+  final TextEditingController _tpController = TextEditingController();
+  final TextEditingController _slController = TextEditingController();
+  double? _potentialProfit;
+  double? _potentialLoss;
 
-  Future<void> _pickAndParseImage() async {
-    final pickedImage = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (pickedImage == null) return;
+  Future<void> _getImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
 
-    final imageFile = File(pickedImage.path);
-    final inputImage = InputImage.fromFile(imageFile);
+    if (pickedFile != null) {
+      setState(() {
+        _image = File(pickedFile.path);
+        _parsedData = null;
+        _potentialProfit = null;
+        _potentialLoss = null;
+      });
+      await _processImage(_image!);
+    }
+  }
 
+  Future<void> _processImage(File image) async {
+    final inputImage = InputImage.fromFile(image);
     final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
     final recognizedText = await textRecognizer.processImage(inputImage);
-    await textRecognizer.close();
+    textRecognizer.close();
 
-    final result = OCRParser.parse(recognizedText);
+    final parsedResult = OCRParser.parse(recognizedText);
+
+    print('[DEBUG] OCR sembol ham verisi: ${parsedResult.symbol}');
+    print('[DEBUG] OCR Parser sonucu sembol: ${parsedResult.symbol}');
 
     setState(() {
-      _image = imageFile;
-      _tradeData = result;
+      _parsedData = parsedResult;
+      _tpController.text = parsedResult.tp?.toString() ?? '';
+      _slController.text = parsedResult.sl?.toString() ?? '';
     });
   }
 
-  double? _calculatePnL(double lot) {
-    if (_tradeData == null || _tradeData!.price == null) return null;
-    final price = _tradeData!.price!;
-    final tpPnl = (_tradeData!.tp != null) ? (_tradeData!.tp! - price) * lot : 0;
-    final slPnl = (_tradeData!.sl != null) ? (price - _tradeData!.sl!) * lot : 0;
+  void _calculatePnL() async {
+    if (_parsedData == null || _parsedData!.price == null) return;
 
-    return (tpPnl != 0 ? tpPnl : -slPnl).toDouble();
+    final lot = double.tryParse(_lotController.text);
+    final price = _parsedData!.price!;
+    final tp = double.tryParse(_tpController.text);
+    final sl = double.tryParse(_slController.text);
+
+    if (lot == null || _parsedData!.symbol == null) return;
+
+    final symbol = await SymbolService().getSymbol(
+      ParserHelper.cleanSymbol(_parsedData!.symbol!),
+    );
+
+    if (symbol == null) return;
+
+    final contractSize = symbol.contractSize.toDouble();
+
+    setState(() {
+      if (tp != null) {
+        final tpDiff = (tp - price).abs();
+        _potentialProfit = tpDiff * lot * contractSize;
+      } else {
+        _potentialProfit = 0;
+      }
+
+      if (sl != null) {
+        final slDiff = (price - sl).abs();
+        _potentialLoss = slDiff * lot * contractSize;
+      } else {
+        _potentialLoss = 0;
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final parsed = _tradeData;
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Fx Smart Calculator OCR'),
-        centerTitle: true,
-      ),
-      body: Padding(
+      appBar: AppBar(title: Text('OCR İşlem Tanıma')),
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ElevatedButton(
-              onPressed: _pickAndParseImage,
-              child: const Text('Resim Yükle ve Oku'),
+              onPressed: _getImage,
+              child: Text('Resim Yükle'),
             ),
-            const SizedBox(height: 10),
             if (_image != null)
-              Image.file(
-                _image!,
-                height: MediaQuery.of(context).size.height * 0.5,
-                fit: BoxFit.contain,
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12.0),
+                child: Image.file(
+                  _image!,
+                  height: MediaQuery.of(context).size.height * 0.5,
+                  fit: BoxFit.contain,
+                ),
               ),
-            const SizedBox(height: 10),
-            if (parsed != null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Sembol: ${parsed.symbol ?? 'Bulunamadı'}"),
-                  Text("İşlem Fiyatı: ${parsed.price?.toStringAsFixed(2) ?? 'Bulunamadı'}"),
-                  Text("TP: ${parsed.tp?.toStringAsFixed(2) ?? 'Bulunamadı'}"),
-                  Text("SL: ${parsed.sl?.toStringAsFixed(2) ?? 'Bulunamadı'}"),
-                ],
+            if (_parsedData != null) ...[
+              Text('Sembol: ${_parsedData!.symbol ?? 'Bulunamadı'}'),
+              Text('Fiyat: ${_parsedData!.price ?? 'Bulunamadı'}'),
+              TextField(
+                controller: _tpController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(labelText: 'TP (Kâr Al)'),
               ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _lotController,
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Lot Miktarı'),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: () {
-                final lot = double.tryParse(_lotController.text);
-                if (lot == null || parsed == null) return;
-
-                final result = _calculatePnL(lot);
-                final text = result != null ? 'Hesaplanan Kar/Zarar: ${result.toStringAsFixed(2)}' : 'Hesaplama yapılamadı';
-
-                showDialog(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: const Text('Sonuç'),
-                    content: Text(text),
-                  ),
-                );
-              },
-              child: const Text('Kâr / Zarar Hesapla'),
-            ),
+              TextField(
+                controller: _slController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(labelText: 'SL (Zararı Durdur)'),
+              ),
+              TextField(
+                controller: _lotController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(labelText: 'Lot'),
+              ),
+              SizedBox(height: 10),
+              ElevatedButton(
+                onPressed: _calculatePnL,
+                child: Text('Kar / Zarar Hesapla'),
+              ),
+              if (_potentialProfit != null && _potentialLoss != null) ...[
+                SizedBox(height: 12),
+                Text('Olası Kar: ${_potentialProfit!.toStringAsFixed(2)}'),
+                Text('Olası Zarar: ${_potentialLoss!.toStringAsFixed(2)}'),
+              ]
+            ] else ...[
+              SizedBox(height: 20),
+              Text('Henüz veri analiz edilmedi'),
+            ]
           ],
         ),
       ),

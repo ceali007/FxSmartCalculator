@@ -1,15 +1,8 @@
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import '../models/parsed_trade_data.dart';
+import '../utils/parser_helper.dart';
 
-class ParsedTradeData {
-  final String? symbol;
-  final double? tp;
-  final double? sl;
-  final double? price;
 
-  ParsedTradeData({this.symbol, this.tp, this.sl, this.price});
-
-  bool get isValid => symbol != null && (tp != null || sl != null);
-}
 
 class OCRParser {
   static ParsedTradeData parse(RecognizedText recognizedText) {
@@ -26,7 +19,6 @@ class OCRParser {
       }
     }
 
-    // Yukarıdan aşağıya, soldan sağa sırala
     sortedLines.sort((a, b) {
       const rowThreshold = 10.0;
       if ((a.top - b.top).abs() < rowThreshold) {
@@ -43,18 +35,19 @@ class OCRParser {
     double? sl;
     double? price;
 
-    // SEMBOL: önceki başarılı algoritmadan alınan yöntem
-    for (var line in lines) {
+    // SEMBOL PARSE
+    for (final line in lines) {
       if (line.contains('v')) {
-        final match = RegExp(r'([A-Z]+[0-9]*)(?=v)').firstMatch(line);
-        if (match != null) {
-          symbol = match.group(1);
+        final rawSymbol = line.split('v')[0].trim();
+        final cleaned = ParserHelper.cleanSymbol(rawSymbol);
+        if (cleaned.isNotEmpty) {
+          symbol = cleaned;
           break;
         }
       }
     }
 
-    // TP değeri: "Kârı Al" sonrası gelen sayı
+    // TP parse
     for (int i = 0; i < lines.length - 2; i++) {
       if (lines[i].toLowerCase().contains('kârı al') || lines[i].toLowerCase().contains('karı al')) {
         final candidate = _tryParseDouble(lines[i + 1]);
@@ -65,7 +58,7 @@ class OCRParser {
       }
     }
 
-    // SL değeri: "Zararı Durdur" sonrası gelen sayı
+    // SL parse
     for (int i = 0; i < lines.length - 2; i++) {
       if (lines[i].toLowerCase().contains('zararı durdur')) {
         if (lines[i + 1].toLowerCase().contains('ayarlanmamış')) {
@@ -80,7 +73,7 @@ class OCRParser {
       }
     }
 
-    // FİYAT: En büyük sayı olarak belirle
+    // Price parse
     final allNumbers = lines.map(_tryParseDouble).whereType<double>().toList();
     if (allNumbers.isNotEmpty) {
       price = allNumbers.reduce((a, b) => a > b ? a : b);

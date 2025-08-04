@@ -1,3 +1,5 @@
+// lib/main.dart
+
 import 'package:flutter/material.dart';
 import 'screens/ocr_screen.dart';
 
@@ -9,13 +11,13 @@ class FxSmartCalculatorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Fx Smart Calculator',
+      debugShowCheckedModeBanner: false,
+      title: 'FxSmartCalculator',
       theme: ThemeData(
         primarySwatch: Colors.indigo,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: OcrScreen(), // const kaldırıldı
-      debugShowCheckedModeBanner: false,
+      home: OcrScreen(),
     );
   }
 }

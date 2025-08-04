@@ -3,23 +3,36 @@ import 'package:flutter/services.dart';
 import '../models/symbol_model.dart';
 
 class SymbolService {
-  Future<List<SymbolModel>> loadSymbols() async {
+  List<SymbolModel>? _cachedSymbols;
+
+  Future<List<SymbolModel>> _loadSymbols() async {
+    if (_cachedSymbols != null) return _cachedSymbols!;
     final String jsonString =
     await rootBundle.loadString('assets/data/symbols.json');
     final List<dynamic> jsonList = json.decode(jsonString);
-    return jsonList.map((json) => SymbolModel.fromJson(json)).toList();
+    _cachedSymbols = jsonList.map((e) => SymbolModel.fromJson(e)).toList();
+    return _cachedSymbols!;
   }
 
-  Future<SymbolModel?> findSymbolByCode(String code) async {
-    final symbols = await loadSymbols();
+  Future<SymbolModel?> getSymbol(String code) async {
+    final symbols = await _loadSymbols();
+    final upperCode = code.toUpperCase();
+
+    print('[DEBUG] Aranan kod: $upperCode');
+
     for (final symbol in symbols) {
-      if (symbol.symbol.toLowerCase() == code.toLowerCase() ||
-          (symbol.alternativeCodes?.any((alt) =>
-          alt.toLowerCase() == code.toLowerCase()) ??
-              false)) {
+      print('[DEBUG] Karşılaştırılan ana kod: ${symbol.symbol.toUpperCase()}');
+      print('[DEBUG] Alternatif kodlar: ${symbol.alternativeCodes.map((e) => e.toUpperCase()).join(', ')}');
+
+      if (symbol.symbol.toUpperCase() == upperCode ||
+          symbol.alternativeCodes.map((e) => e.toUpperCase()).contains(upperCode)) {
+        print('[DEBUG] EŞLEŞME BULUNDU: ${symbol.symbol}');
         return symbol;
       }
     }
+
+    print('[DEBUG] Eşleşme bulunamadı.');
     return null;
   }
+
 }
