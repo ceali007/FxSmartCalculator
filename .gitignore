@@ -1,0 +1,56 @@
+# Flutter/Dart/Pub related
+.dart_tool/
+.packages
+.pub-cache/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+generated_plugin_registrant.dart
+
+# Android
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/local.properties
+
+# iOS
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/.symlinks/
+ios/Pods/
+ios/Runner.xcworkspace/
+ios/Runner/GeneratedPluginRegistrant.*
+
+# macOS
+macos/Flutter/Flutter.framework
+macos/Flutter/Flutter.podspec
+macos/.symlinks/
+macos/Pods/
+macos/Runner.xcworkspace/
+macos/Runner/GeneratedPluginRegistrant.*
+
+# Windows
+windows/runner/GeneratedPluginRegistrant.*
+windows/.dart_tool/
+
+# Web
+lib/generated_plugin_registrant.dart
+
+# VS Code & IntelliJ
+.vscode/
+.idea/
+
+# Other
+*.iml
+*.ipr
+*.iws
+*.log
+*.tmp
+
+# Personal Files
+*.swp
+*.swo
+
+# Symbol data JSON (optional, keep if you're editing directly in Flutter)
+assets/data/symbols.json
