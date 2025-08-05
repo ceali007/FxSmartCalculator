@@ -23,7 +23,8 @@ class SymbolModel {
     return SymbolModel(
       symbol: json['symbol'],
       name: json['name'],
-      alternativeCodes: List<String>.from(json['alternativeCodes']),
+      alternativeCodes:
+      (json['alternativeCodes'] as List<dynamic>).cast<String>(),
       contractSize: json['contractSize'],
       digit: json['digit'],
       tickSize: (json['tickSize'] as num).toDouble(),
@@ -31,4 +32,28 @@ class SymbolModel {
       type: json['type'],
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'symbol': symbol,
+      'name': name,
+      'alternativeCodes': alternativeCodes,
+      'contractSize': contractSize,
+      'digit': digit,
+      'tickSize': tickSize,
+      'currency': currency,
+      'type': type,
+    };
+  }
+
+  // 🔽 Eşitlik kontrolü için yalnızca symbol dikkate alınır
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is SymbolModel &&
+              runtimeType == other.runtimeType &&
+              symbol == other.symbol;
+
+  @override
+  int get hashCode => symbol.hashCode;
 }
