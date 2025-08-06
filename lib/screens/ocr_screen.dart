@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../models/calculation_result.dart';
 import '../models/parsed_trade_data.dart';
 import '../models/symbol_model.dart';
+import '../services/calculation_service.dart';
 import '../services/symbol_service.dart';
 import '../utils/ocr_parser.dart';
 import '../utils/parser_helper.dart';
@@ -65,15 +67,16 @@ class _OcrScreenState extends State<OcrScreen> {
       _priceController.text = parsed.price?.toString() ?? '';
     });
 
-    await Future.delayed(Duration(milliseconds: 300));
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: Duration(milliseconds: 500),
-      curve: Curves.easeOut,
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: Duration(milliseconds: 500),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
-  void _calculatePnL() {
+  void _handleCalculate() {
     final lot = double.tryParse(_lotController.text) ?? 0;
     final price = double.tryParse(_priceController.text) ?? 0;
     final tp = double.tryParse(_tpController.text);
@@ -81,38 +84,23 @@ class _OcrScreenState extends State<OcrScreen> {
 
     if (_symbolModel == null || lot == 0 || price == 0) return;
 
-    final contractSize = _symbolModel!.contractSize;
-
-    double? profit;
-    double? loss;
-
-    if (tp != null && tp > 0) {
-      final isBuy = tp > price;
-      final diff = (tp - price).abs();
-      final value = lot * contractSize * diff;
-      if (isBuy) {
-        profit = value;
-      } else {
-        loss = value;
-      }
-    }
-
-    if (sl != null && sl > 0) {
-      final isBuy = sl < price;
-      final diff = (price - sl).abs();
-      final value = lot * contractSize * diff;
-      if (isBuy) {
-        loss = value;
-      } else {
-        profit = value;
-      }
-    }
+    final result = CalculationService.calculatePnL(
+      symbol: _symbolModel!,
+      price: price,
+      lot: lot,
+      tp: tp,
+      sl: sl,
+    );
 
     setState(() {
-      _profit = profit;
-      _loss = loss;
+      _profit = result.profit;
+      _loss = result.loss;
     });
 
+    _showPnLDialog(result);
+  }
+
+  void _showPnLDialog(CalculationResult result) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -121,11 +109,11 @@ class _OcrScreenState extends State<OcrScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_profit != null)
-                Text('Tahmini Kar: ${_profit!.toStringAsFixed(2)} \$',
+              if (result.profit != null)
+                Text('Tahmini Kar: ${result.profit!.toStringAsFixed(2)} \$',
                     style: TextStyle(color: Colors.green)),
-              if (_loss != null)
-                Text('Tahmini Zarar: ${_loss!.toStringAsFixed(2)} \$',
+              if (result.loss != null)
+                Text('Tahmini Zarar: ${result.loss!.toStringAsFixed(2)} \$',
                     style: TextStyle(color: Colors.red)),
             ],
           ),
@@ -139,6 +127,7 @@ class _OcrScreenState extends State<OcrScreen> {
       },
     );
   }
+
 
   Widget _buildSymbolDropdown() {
     return DropdownButtonFormField<SymbolModel>(
@@ -167,6 +156,28 @@ class _OcrScreenState extends State<OcrScreen> {
     );
   }
 
+  void _showImagePopup() {
+    if (_image == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.black.withOpacity(0.8),
+          insetPadding: EdgeInsets.all(20),
+          child: Container(
+            width: MediaQuery.of(context).size.width * 0.75,
+            child: Image.file(
+              _image!,
+              fit: BoxFit.contain,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -189,10 +200,13 @@ class _OcrScreenState extends State<OcrScreen> {
             if (_image != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Image.file(
-                  _image!,
-                  height: MediaQuery.of(context).size.height * 0.35,
-                  fit: BoxFit.contain,
+                child: GestureDetector(
+                  onTap: _showImagePopup,
+                  child: Image.file(
+                    _image!,
+                    height: MediaQuery.of(context).size.height * 0.35,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
             SizedBox(height: 10),
@@ -267,7 +281,7 @@ class _OcrScreenState extends State<OcrScreen> {
             ),
             SizedBox(height: 10),
             ElevatedButton(
-              onPressed: _calculatePnL,
+              onPressed: _handleCalculate,
               child: Text('Hesapla'),
             ),
             if (_parsedData == null && _image == null)
