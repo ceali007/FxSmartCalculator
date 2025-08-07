@@ -1,4 +1,4 @@
-import 'dart:io';
+ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -11,6 +11,7 @@ import '../services/calculation_service.dart';
 import '../services/symbol_service.dart';
 import '../utils/ocr_parser.dart';
 import '../utils/parser_helper.dart';
+import '../utils/text_parser_helper.dart';
 
 class OcrScreen extends StatefulWidget {
   @override
@@ -29,7 +30,7 @@ class _OcrScreenState extends State<OcrScreen> {
   SymbolModel? _symbolModel;
   double? _profit;
   double? _loss;
-  List<SymbolModel> _symbols = [];
+  List<SymbolModel> _symbolList = [];
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -41,7 +42,7 @@ class _OcrScreenState extends State<OcrScreen> {
   Future<void> _loadSymbols() async {
     final symbols = await SymbolService().getAllSymbols();
     setState(() {
-      _symbols = symbols;
+      _symbolList = symbols;
     });
   }
 
@@ -75,30 +76,39 @@ class _OcrScreenState extends State<OcrScreen> {
       );
     });
   }
-
-  void _handleCalculate() {
+  void _handleCalculate() async {
     final lot = double.tryParse(_lotController.text) ?? 0;
     final price = double.tryParse(_priceController.text) ?? 0;
     final tp = double.tryParse(_tpController.text);
     final sl = double.tryParse(_slController.text);
 
-    if (_symbolModel == null || lot == 0 || price == 0) return;
+    if (_symbolModel == null || lot == 0 || price == 0) {
+      print("Eksik veri: Sembol, lot veya fiyat eksik.");
+      return;
+    }
 
-    final result = CalculationService.calculatePnL(
-      symbol: _symbolModel!,
-      price: price,
-      lot: lot,
-      tp: tp,
-      sl: sl,
-    );
+    try {
+      final result = await CalculationService.calculatePnL(
+        symbol: _symbolModel!,
+        price: price,
+        lot: lot,
+        tp: tp,
+        sl: sl,
+      );
 
-    setState(() {
-      _profit = result.profit;
-      _loss = result.loss;
-    });
+      setState(() {
+        _profit = result.profit;
+        _loss = result.loss;
+      });
 
-    _showPnLDialog(result);
+      _showPnLDialog(result);
+    } catch (e) {
+      print("Hesaplama sırasında hata: $e");
+    }
   }
+
+
+
 
   void _showPnLDialog(CalculationResult result) {
     showDialog(
@@ -142,7 +152,7 @@ class _OcrScreenState extends State<OcrScreen> {
           ),
         ),
       ),
-      items: _symbols.map((symbol) {
+      items: _symbolList.map((symbol) {
         return DropdownMenuItem<SymbolModel>(
           value: symbol,
           child: Text(symbol.symbol, style: TextStyle(fontSize: 14)),
@@ -177,6 +187,79 @@ class _OcrScreenState extends State<OcrScreen> {
     );
   }
 
+  Widget _buildTextField(TextEditingController controller, String label, {Color? color}) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.numberWithOptions(decimal: true),
+      style: TextStyle(fontSize: 14, color: color),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: color ?? Colors.black, fontSize: 13),
+        contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        border: OutlineInputBorder(
+          borderSide: BorderSide(
+            color: Colors.grey.shade400,
+            width: 1.0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTextParseDialog(BuildContext context) {
+    final TextEditingController _textController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('İşlem Metni Yapıştır'),
+        content: TextField(
+          controller: _textController,
+          maxLines: 10,
+          decoration: InputDecoration(
+            hintText: 'EURUSD SEL\nGIRIS : 1.16772\nSL: 1.17534\nTP: 1.15887',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // Kapat
+            },
+            child: Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () {
+              final parsed = TextParserHelper.parseText(_textController.text);
+
+              // Kontrolleri doldur
+              _priceController.text = parsed['price'] ?? '';
+              _tpController.text = parsed['tp'] ?? '';
+              _slController.text = parsed['sl'] ?? '';
+
+              final parsedSymbol = parsed['symbol'] ?? '';
+              if (parsedSymbol.isNotEmpty) {
+                final matched = _symbolList.firstWhere(
+                      (s) =>
+                  s.symbol == parsedSymbol ||
+                      s.alternativeCodes.contains(parsedSymbol),
+                  orElse: () => _symbolList.first,
+                );
+                setState(() {
+                  _symbolModel = matched;
+                });
+              }
+
+              Navigator.of(context).pop(); // Kapat
+            },
+            child: Text('Parse Et'),
+          ),
+        ],
+      ),
+    );
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -187,110 +270,53 @@ class _OcrScreenState extends State<OcrScreen> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
         ),
       ),
-      body: SingleChildScrollView(
+      body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        controller: _scrollController,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ElevatedButton(
-              onPressed: _getImageAndParseText,
-              child: Text('Resim Yükle'),
-            ),
-            if (_image != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: GestureDetector(
-                  onTap: _showImagePopup,
-                  child: Image.file(
-                    _image!,
-                    height: MediaQuery.of(context).size.height * 0.35,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-            SizedBox(height: 10),
-            _buildSymbolDropdown(),
-            SizedBox(height: 8),
-            TextField(
-              controller: _priceController,
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
-              style: TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'Fiyat',
-                labelStyle: TextStyle(fontSize: 13),
-                contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                border: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: Colors.grey.shade400, // Daha açık gri
-                    width: 1.0,
-                  ),
+        children: [
+          ElevatedButton(
+            onPressed: _getImageAndParseText,
+            child: Text('Resim Yükle'),
+          ),
+          if (_image != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: GestureDetector(
+                onTap: _showImagePopup,
+                child: Image.file(
+                  _image!,
+                  height: MediaQuery.of(context).size.height * 0.35,
+                  fit: BoxFit.contain,
                 ),
               ),
             ),
-            SizedBox(height: 8),
-            TextField(
-              controller: _tpController,
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
-              style: TextStyle(fontSize: 14, color: Colors.green[800]),
-              decoration: InputDecoration(
-                labelText: 'TP (Kar Al)',
-                labelStyle: TextStyle(color: Colors.green[800], fontSize: 13),
-                contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                border: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: Colors.grey.shade400, // Daha açık gri
-                    width: 1.0,
-                  ),
-                ),
-              ),
+          SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: () => _showTextParseDialog(context),
+            child: Text('Text Parse'),
+          ),
+          SizedBox(height: 10),
+          _buildSymbolDropdown(),
+          SizedBox(height: 8),
+          _buildTextField(_priceController, 'Fiyat'),
+          SizedBox(height: 8),
+          _buildTextField(_tpController, 'TP (Kar Al)', color: Colors.green[800]),
+          SizedBox(height: 8),
+          _buildTextField(_slController, 'SL (Zarar Durdur)', color: Colors.red[800]),
+          SizedBox(height: 8),
+          _buildTextField(_lotController, 'Lot Miktarı'),
+          SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: _handleCalculate,
+            child: Text('Hesapla'),
+          ),
+          SizedBox(height: 32),
+
+          if (_parsedData == null && _image == null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16.0),
+              child: Text('Resim yüklemeden manuel giriş yapabilirsiniz.'),
             ),
-            SizedBox(height: 8),
-            TextField(
-              controller: _slController,
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
-              style: TextStyle(fontSize: 14, color: Colors.red[800]),
-              decoration: InputDecoration(
-                labelText: 'SL (Zarar Durdur)',
-                labelStyle: TextStyle(color: Colors.red[800], fontSize: 13),
-                contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                border: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: Colors.grey.shade400, // Daha açık gri
-                    width: 1.0,
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(height: 8),
-            TextField(
-              controller: _lotController,
-              keyboardType: TextInputType.number,
-              style: TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                labelText: 'Lot Miktarı',
-                labelStyle: TextStyle(fontSize: 13),
-                contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                border: OutlineInputBorder(
-                  borderSide: BorderSide(
-                    color: Colors.grey.shade400, // Daha açık gri
-                    width: 1.0,
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: _handleCalculate,
-              child: Text('Hesapla'),
-            ),
-            if (_parsedData == null && _image == null)
-              Padding(
-                padding: const EdgeInsets.only(top: 16.0),
-                child: Text('Resim yüklemeden manuel giriş yapabilirsiniz.'),
-              ),
-          ],
-        ),
+        ],
       ),
     );
   }
