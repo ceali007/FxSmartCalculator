@@ -35,4 +35,23 @@ class CalculationService {
 
     return CalculationResult(profit: profit, loss: loss);
   }
+
+  static double? calculateLotByRiskRatio({
+    required double price,
+    required double sl,
+    required double balance,
+    required double riskPercentage,
+    required double contractSize,
+  }) {
+    final stopPoint = (price - sl).abs();
+
+    if (stopPoint == 0 || contractSize == 0) return null;
+
+    final maxLoss = balance * (riskPercentage / 100);
+    final lot = maxLoss / (contractSize * stopPoint);
+
+    return lot;
+  }
+
+
 }

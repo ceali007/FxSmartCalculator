@@ -33,6 +33,11 @@ class _OcrScreenState extends State<OcrScreen> {
   List<SymbolModel> _symbolList = [];
   final ScrollController _scrollController = ScrollController();
 
+  bool _showRiskControls = false;
+  double _riskPercentage = 1.0;
+  final TextEditingController _balanceController = TextEditingController();
+
+
   @override
   void initState() {
     super.initState();
@@ -259,6 +264,29 @@ class _OcrScreenState extends State<OcrScreen> {
     );
   }
 
+  void _calculateLotForRisk() {
+    final balance = double.tryParse(_balanceController.text);
+    final price = double.tryParse(_priceController.text);
+    final sl = double.tryParse(_slController.text);
+
+    if (_symbolModel == null || balance == null || price == null || sl == null) {
+      return;
+    }
+
+    final lot = CalculationService.calculateLotByRiskRatio(
+      price: price,
+      sl: sl,
+      balance: balance,
+      riskPercentage: _riskPercentage,
+      contractSize: _symbolModel!.contractSize.toDouble(),
+    );
+
+    if (lot != null) {
+      setState(() {
+        _lotController.text = lot.toStringAsFixed(2);
+      });
+    }
+  }
 
 
   @override
@@ -270,54 +298,124 @@ class _OcrScreenState extends State<OcrScreen> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        children: [
-          ElevatedButton(
-            onPressed: _getImageAndParseText,
-            child: Text('Resim Yükle'),
-          ),
-          if (_image != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: GestureDetector(
-                onTap: _showImagePopup,
-                child: Image.file(
-                  _image!,
-                  height: MediaQuery.of(context).size.height * 0.35,
-                  fit: BoxFit.contain,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 500),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ElevatedButton(
+                  onPressed: _getImageAndParseText,
+                  child: Text('Resim Yükle'),
                 ),
-              ),
+                if (_image != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: GestureDetector(
+                      onTap: _showImagePopup,
+                      child: Image.file(
+                        _image!,
+                        height: MediaQuery.of(context).size.height * 0.35,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                SizedBox(height: 10),
+                ElevatedButton(
+                  onPressed: () => _showTextParseDialog(context),
+                  child: Text('Text Parse'),
+                ),
+                SizedBox(height: 10),
+                _buildSymbolDropdown(),
+                SizedBox(height: 8),
+                _buildTextField(_priceController, 'Fiyat'),
+                SizedBox(height: 8),
+                _buildTextField(_tpController, 'TP (Kar Al)', color: Colors.green[800]),
+                SizedBox(height: 8),
+                _buildTextField(_slController, 'SL (Zarar Durdur)', color: Colors.red[800]),
+                SizedBox(height: 8),
+                CheckboxListTile(
+                  title: Text('Kayıp Oranı'),
+                  value: _showRiskControls,
+                  onChanged: (value) {
+                    setState(() {
+                      _showRiskControls = value!;
+                    });
+                  },
+                ),
+                if (_showRiskControls) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: TextField(
+                      controller: _balanceController,
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: 'Bakiye (USD)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  Text('Zarar Oranı: ${_riskPercentage.toStringAsFixed(1)} %'),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.remove),
+                        onPressed: () {
+                          setState(() {
+                            if (_riskPercentage > 1.0) _riskPercentage -= 0.5;
+                            _calculateLotForRisk();
+                          });
+                        },
+                      ),
+                      Expanded(
+                        child: Slider(
+                          value: _riskPercentage,
+                          min: 1.0,
+                          max: 10.0,
+                          divisions: 18,
+                          label: '${_riskPercentage.toStringAsFixed(1)}%',
+                          onChanged: (value) {
+                            setState(() {
+                              _riskPercentage = value;
+                              _calculateLotForRisk();
+                            });
+                          },
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.add),
+                        onPressed: () {
+                          setState(() {
+                            if (_riskPercentage < 10.0) _riskPercentage += 0.5;
+                            _calculateLotForRisk();
+                          });
+                        },
+                      ),
+                    ],
+                  )
+                ],
+                SizedBox(height: 8),
+                _buildTextField(_lotController, 'Lot Miktarı'),
+                SizedBox(height: 10),
+                ElevatedButton(
+                  onPressed: _handleCalculate,
+                  child: Text('Hesapla'),
+                ),
+                SizedBox(height: 32),
+                if (_parsedData == null && _image == null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16.0),
+                    child: Text('Resim yüklemeden manuel giriş yapabilirsiniz.'),
+                  ),
+              ],
             ),
-          SizedBox(height: 10),
-          ElevatedButton(
-            onPressed: () => _showTextParseDialog(context),
-            child: Text('Text Parse'),
           ),
-          SizedBox(height: 10),
-          _buildSymbolDropdown(),
-          SizedBox(height: 8),
-          _buildTextField(_priceController, 'Fiyat'),
-          SizedBox(height: 8),
-          _buildTextField(_tpController, 'TP (Kar Al)', color: Colors.green[800]),
-          SizedBox(height: 8),
-          _buildTextField(_slController, 'SL (Zarar Durdur)', color: Colors.red[800]),
-          SizedBox(height: 8),
-          _buildTextField(_lotController, 'Lot Miktarı'),
-          SizedBox(height: 10),
-          ElevatedButton(
-            onPressed: _handleCalculate,
-            child: Text('Hesapla'),
-          ),
-          SizedBox(height: 32),
-
-          if (_parsedData == null && _image == null)
-            Padding(
-              padding: const EdgeInsets.only(top: 16.0),
-              child: Text('Resim yüklemeden manuel giriş yapabilirsiniz.'),
-            ),
-        ],
+        ),
       ),
     );
   }
+
+
 }
